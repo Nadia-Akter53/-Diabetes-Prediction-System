@@ -488,7 +488,7 @@ with tab3:
     st.pyplot(fig)
     plt.close()
     
-    # Feature Importance
+    # Feature Importance - FIXED VERSION
     st.subheader("Feature Importance")
     feature_cols = ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 
                     'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age']
@@ -498,13 +498,15 @@ with tab3:
     }).sort_values('importance', ascending=True)
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    colors = plt.cm.Viridis(importance['importance'] / importance['importance'].max())
-    ax.barh(importance['feature'], importance['importance'], color=colors)
+    # ✅ CORRECTED: Using lowercase 'viridis'
+    colors = plt.cm.viridis(importance['importance'] / importance['importance'].max())
+    bars = ax.barh(importance['feature'], importance['importance'], color=colors)
     ax.set_xlabel('Importance', fontsize=12)
     ax.set_ylabel('Features', fontsize=12)
     ax.set_title('Feature Importance from Model', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     
+    # Add value labels
     for i, (feature, imp) in enumerate(zip(importance['feature'], importance['importance'])):
         ax.text(imp + 0.01, i, f'{imp:.3f}', va='center')
     
@@ -518,7 +520,7 @@ with tab3:
     age_risk = df.groupby(age_groups)['Outcome'].mean() * 100
     
     fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(age_risk.index, age_risk.values, color=plt.cm.Viridis(age_risk.values / 100))
+    bars = ax.bar(age_risk.index, age_risk.values, color=plt.cm.viridis(age_risk.values / 100))
     ax.set_xlabel('Age Group', fontsize=12)
     ax.set_ylabel('Diabetes Rate (%)', fontsize=12)
     ax.set_title('Diabetes Prevalence by Age Group', fontsize=14, fontweight='bold')
