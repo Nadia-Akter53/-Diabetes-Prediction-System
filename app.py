@@ -3,24 +3,11 @@ import pandas as pd
 import numpy as np
 import sqlite3
 import pickle
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
-
-# Try importing optional visualization libraries
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("⚠️ Plotly not available. Some visualizations will be limited.")
-
-try:
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
 
 # Page config
 st.set_page_config(
@@ -71,12 +58,12 @@ st.markdown("""
         animation: fadeIn 0.5s ease-in;
     }
     
-    .risk-high {
+    .risk-diabetes {
         background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         color: white;
     }
     
-    .risk-low {
+    .risk-healthy {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
     }
@@ -101,7 +88,7 @@ st.markdown("""
         transition: width 0.5s ease;
     }
     
-    .badge-risk {
+    .badge-diabetes {
         background: #ef4444;
         color: white;
         padding: 0.25rem 0.75rem;
@@ -111,7 +98,7 @@ st.markdown("""
         display: inline-block;
     }
     
-    .badge-safe {
+    .badge-healthy {
         background: #10b981;
         color: white;
         padding: 0.25rem 0.75rem;
@@ -125,12 +112,10 @@ st.markdown("""
 
 # Database functions
 def init_database():
-    """Initialize database tables"""
     try:
         conn = sqlite3.connect('diabetes.db')
         cursor = conn.cursor()
         
-        # Patients table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS patients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,7 +127,6 @@ def init_database():
             )
         ''')
         
-        # Medical records table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS medical_records (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,12 +150,10 @@ def init_database():
         conn.commit()
         conn.close()
         return True
-    except Exception as e:
-        st.error(f"Database error: {e}")
+    except:
         return False
 
 def add_patient(patient_name, patient_id, age, gender):
-    """Add new patient to database"""
     try:
         conn = sqlite3.connect('diabetes.db')
         cursor = conn.cursor()
@@ -182,11 +164,10 @@ def add_patient(patient_name, patient_id, age, gender):
         conn.commit()
         conn.close()
         return True
-    except Exception as e:
+    except:
         return False
 
 def get_patients():
-    """Get all patients"""
     try:
         conn = sqlite3.connect('diabetes.db')
         df = pd.read_sql("SELECT * FROM patients ORDER BY created_at DESC", conn)
@@ -196,11 +177,10 @@ def get_patients():
         return pd.DataFrame()
 
 def save_medical_record(patient_id, data, prediction, probability):
-    """Save medical record"""
     try:
         conn = sqlite3.connect('diabetes.db')
         cursor = conn.cursor()
-        risk_level = "High Risk" if prediction == 1 else "Low Risk"
+        risk_level = "Diabetes" if prediction == 1 else "Healthy"
         cursor.execute('''
             INSERT INTO medical_records 
             (patient_id, pregnancies, glucose, blood_pressure, skin_thickness, 
@@ -211,11 +191,10 @@ def save_medical_record(patient_id, data, prediction, probability):
         conn.commit()
         conn.close()
         return True
-    except Exception as e:
+    except:
         return False
 
 def get_patient_history(patient_id):
-    """Get patient medical history"""
     try:
         conn = sqlite3.connect('diabetes.db')
         df = pd.read_sql(f'''
@@ -228,26 +207,38 @@ def get_patient_history(patient_id):
     except:
         return pd.DataFrame()
 
+def get_all_records():
+    try:
+        conn = sqlite3.connect('diabetes.db')
+        df = pd.read_sql('''
+            SELECT m.*, p.patient_name, p.gender
+            FROM medical_records m
+            LEFT JOIN patients p ON m.patient_id = p.patient_id
+            ORDER BY m.record_date DESC
+        ''', conn)
+        conn.close()
+        return df
+    except:
+        return pd.DataFrame()
+
 # Load model and scaler
 @st.cache_resource
 def load_model_and_scaler():
-    """Load trained model and scaler"""
     try:
         with open('model (3).pkl', 'rb') as f:
             model = pickle.load(f)
         with open('scaler.pkl', 'rb') as f:
             scaler = pickle.load(f)
         return model, scaler
-    except Exception as e:
+    except:
         return None, None
 
 @st.cache_data
 def load_dataset():
-    """Load diabetes dataset"""
     try:
         df = pd.read_csv('diabetes.csv')
         return df
-    except Exception as e:
+    except:
         return None
 
 # Initialize
@@ -255,7 +246,6 @@ init_database()
 df = load_dataset()
 model, scaler = load_model_and_scaler()
 
-# Check if all required files are present
 if df is None:
     st.error("❌ Please make sure 'diabetes.csv' is in the directory")
     st.stop()
@@ -270,7 +260,6 @@ with st.sidebar:
     st.markdown("## 🏥 Diabetes Prediction System")
     st.markdown("---")
     
-    # Patient Management
     st.markdown("### 👤 Add New Patient")
     with st.expander("➕ New Patient", expanded=False):
         patient_name = st.text_input("Full Name")
@@ -288,7 +277,6 @@ with st.sidebar:
             else:
                 st.warning("Please fill all fields")
     
-    # Patient Selection
     st.markdown("### 📋 Select Patient")
     patients_df = get_patients()
     if len(patients_df) > 0:
@@ -296,9 +284,14 @@ with st.sidebar:
                           for _, row in patients_df.iterrows()}
         selected_patient = st.selectbox("Choose patient", list(patient_options.keys()))
         selected_patient_id = patient_options[selected_patient]
+        
+        # Get patient gender for conditional fields
+        patient_info = patients_df[patients_df['patient_id'] == selected_patient_id].iloc[0]
+        patient_gender_info = patient_info['gender']
     else:
         st.info("No patients yet")
         selected_patient_id = None
+        patient_gender_info = None
     
     st.markdown("---")
     st.markdown("### 📊 Statistics")
@@ -324,21 +317,28 @@ with col4:
 st.markdown("---")
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["🔮 Predict Diabetes", "👥 Patient Records", "📊 Visualizations", "📋 History"])
+tab1, tab2, tab3, tab4 = st.tabs(["🔮 Predict Diabetes", "👥 Patient Records", "📊 Visualizations", "📋 History & Analytics"])
 
 # Tab 1: Prediction
 with tab1:
     st.markdown("### Enter Patient Information")
     
     if selected_patient_id:
-        st.info(f"👤 Current Patient: **{selected_patient}**")
+        st.info(f"👤 Current Patient: **{selected_patient}** | Gender: **{patient_gender_info}**")
     else:
         st.warning("⚠️ Please add a patient from the sidebar first")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        pregnancies = st.number_input("Number of Pregnancies", min_value=0, max_value=20, value=1, step=1)
+        # Conditional field: Pregnancies only for Female patients
+        if patient_gender_info == "Female":
+            pregnancies = st.number_input("Number of Pregnancies", min_value=0, max_value=20, value=1, step=1,
+                                         help="Only applicable for female patients")
+        else:
+            pregnancies = 0
+            st.info("ℹ️ Pregnancies field is not applicable for male patients. Default value 0 will be used.")
+        
         glucose = st.number_input("Glucose Level", min_value=0, max_value=300, value=120, step=1)
         bp = st.number_input("Blood Pressure", min_value=0, max_value=200, value=70, step=1)
         skin = st.number_input("Skin Thickness", min_value=0, max_value=100, value=20, step=1)
@@ -369,24 +369,24 @@ with tab1:
             
             if prediction == 1:
                 st.markdown(f"""
-                <div class="prediction-box risk-high">
-                    <h1 style="font-size: 2.5rem;">⚠️ DIABETES RISK DETECTED</h1>
-                    <p style="font-size: 1.8rem; font-weight: bold;">{probability*100:.1f}% Probability</p>
+                <div class="prediction-box risk-diabetes">
+                    <h1 style="font-size: 2.5rem;">🩺 DIABETES DETECTED</h1>
+                    <p style="font-size: 1.8rem; font-weight: bold;">{probability*100:.1f}% Probability of Diabetes</p>
                     <div class="probability-bar">
                         <div class="probability-fill" style="width: {probability*100:.0f}%;"></div>
                     </div>
-                    <p style="margin-top: 1rem;">⚠️ Recommendation: Consult healthcare provider immediately</p>
+                    <p style="margin-top: 1rem;">⚠️ Recommendation: Consult healthcare provider immediately for further evaluation</p>
                 </div>
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
-                <div class="prediction-box risk-low">
-                    <h1 style="font-size: 2.5rem;">✅ LOW DIABETES RISK</h1>
-                    <p style="font-size: 1.8rem; font-weight: bold;">{(1-probability)*100:.1f}% Probability of being healthy</p>
+                <div class="prediction-box risk-healthy">
+                    <h1 style="font-size: 2.5rem;">✅ HEALTHY</h1>
+                    <p style="font-size: 1.8rem; font-weight: bold;">{(1-probability)*100:.1f}% Probability of Being Healthy</p>
                     <div class="probability-bar">
                         <div class="probability-fill" style="width: {(1-probability)*100:.0f}%;"></div>
                     </div>
-                    <p style="margin-top: 1rem;">✅ Recommendation: Maintain healthy lifestyle</p>
+                    <p style="margin-top: 1rem;">✅ Recommendation: Maintain healthy lifestyle with regular exercise and balanced diet</p>
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -413,12 +413,6 @@ with tab1:
                     st.error(f"🔴 High DPF: {dpf}")
                 else:
                     st.success(f"🟢 Normal DPF: {dpf}")
-            
-            # Show recent history
-            history = get_patient_history(selected_patient_id)
-            if len(history) > 1:
-                st.markdown("### 📋 Recent Predictions")
-                st.dataframe(history[['record_date', 'glucose', 'bmi', 'risk_level']].head(5), use_container_width=True)
         else:
             st.error("Please add a patient first!")
 
@@ -431,150 +425,250 @@ with tab2:
         for _, patient in patients.iterrows():
             with st.expander(f"👤 {patient['patient_name']} (ID: {patient['patient_id']})"):
                 col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Age", patient['age'])
-                with col2:
-                    st.metric("Gender", patient['gender'])
-                with col3:
-                    st.metric("Registered", patient['created_at'][:10])
+                col1.metric("Age", patient['age'])
+                col2.metric("Gender", patient['gender'])
+                col3.metric("Registered", patient['created_at'][:10])
                 
                 history = get_patient_history(patient['patient_id'])
                 if len(history) > 0:
                     st.subheader("Medical History")
-                    st.dataframe(history[['record_date', 'glucose', 'bmi', 'risk_level']].head(5), use_container_width=True)
+                    display_history = history[['record_date', 'glucose', 'bmi', 'risk_level', 'probability']].copy()
+                    display_history['probability'] = display_history['probability'].apply(lambda x: f"{x*100:.1f}%")
+                    st.dataframe(display_history.head(5), use_container_width=True)
                     
                     latest = history.iloc[0]
                     if latest['prediction'] == 1:
-                        st.markdown(f'<span class="badge-risk">⚠️ Last: High Risk ({latest["probability"]*100:.1f}%)</span>', unsafe_allow_html=True)
+                        st.markdown(f'<span class="badge-diabetes">🩺 Last: Diabetes ({latest["probability"]*100:.1f}%)</span>', unsafe_allow_html=True)
                     else:
-                        st.markdown(f'<span class="badge-safe">✅ Last: Low Risk ({(1-latest["probability"])*100:.1f}% Healthy)</span>', unsafe_allow_html=True)
+                        st.markdown(f'<span class="badge-healthy">✅ Last: Healthy ({(1-latest["probability"])*100:.1f}%)</span>', unsafe_allow_html=True)
     else:
-        st.info("No patients added yet. Add a patient from the sidebar.")
+        st.info("No patients added yet")
 
 # Tab 3: Visualizations
 with tab3:
     st.markdown("### 📊 Data Visualizations")
     
-    if PLOTLY_AVAILABLE:
-        # Use Plotly for interactive charts
+    # Set style
+    plt.style.use('default')
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Glucose Distribution")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        glucose_0 = df[df['Outcome']==0]['Glucose']
+        glucose_1 = df[df['Outcome']==1]['Glucose']
+        ax.hist(glucose_0, bins=30, alpha=0.5, label='Healthy', color='green', edgecolor='black')
+        ax.hist(glucose_1, bins=30, alpha=0.5, label='Diabetes', color='red', edgecolor='black')
+        ax.set_xlabel('Glucose Level (mg/dL)', fontsize=12)
+        ax.set_ylabel('Frequency', fontsize=12)
+        ax.set_title('Glucose Distribution by Health Status', fontsize=14, fontweight='bold')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        st.pyplot(fig)
+        plt.close()
+    
+    with col2:
+        st.subheader("BMI Distribution")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        df.boxplot(column='BMI', by='Outcome', ax=ax, patch_artist=True)
+        ax.set_title('BMI Distribution by Health Status', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Health Status (0 = Healthy, 1 = Diabetes)', fontsize=12)
+        ax.set_ylabel('BMI (kg/m²)', fontsize=12)
+        st.pyplot(fig)
+        plt.close()
+    
+    # Correlation Heatmap
+    st.subheader("Feature Correlation Matrix")
+    fig, ax = plt.subplots(figsize=(12, 10))
+    corr_matrix = df.corr()
+    sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='coolwarm', 
+                square=True, linewidths=1, ax=ax, cbar_kws={"shrink": 0.8})
+    ax.set_title('Feature Correlation Matrix', fontsize=16, fontweight='bold')
+    st.pyplot(fig)
+    plt.close()
+    
+    # Feature Importance
+    st.subheader("Feature Importance")
+    feature_cols = ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 
+                    'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age']
+    importance = pd.DataFrame({
+        'feature': feature_cols,
+        'importance': abs(model.coef_[0])
+    }).sort_values('importance', ascending=True)
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    colors = plt.cm.Viridis(importance['importance'] / importance['importance'].max())
+    ax.barh(importance['feature'], importance['importance'], color=colors)
+    ax.set_xlabel('Importance', fontsize=12)
+    ax.set_ylabel('Features', fontsize=12)
+    ax.set_title('Feature Importance from Model', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    
+    for i, (feature, imp) in enumerate(zip(importance['feature'], importance['importance'])):
+        ax.text(imp + 0.01, i, f'{imp:.3f}', va='center')
+    
+    st.pyplot(fig)
+    plt.close()
+    
+    # Diabetes by Age Group
+    st.subheader("Diabetes Rate by Age Group")
+    age_groups = pd.cut(df['Age'], bins=[20, 30, 40, 50, 60, 100], 
+                        labels=['20-30', '30-40', '40-50', '50-60', '60+'])
+    age_risk = df.groupby(age_groups)['Outcome'].mean() * 100
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(age_risk.index, age_risk.values, color=plt.cm.Viridis(age_risk.values / 100))
+    ax.set_xlabel('Age Group', fontsize=12)
+    ax.set_ylabel('Diabetes Rate (%)', fontsize=12)
+    ax.set_title('Diabetes Prevalence by Age Group', fontsize=14, fontweight='bold')
+    ax.set_ylim(0, 100)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    for bar, value in zip(bars, age_risk.values):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1, 
+                f'{value:.1f}%', ha='center', va='bottom')
+    
+    st.pyplot(fig)
+    plt.close()
+
+# Tab 4: History & Analytics
+with tab4:
+    st.markdown("### 📋 All Predictions History & Analytics")
+    
+    all_records = get_all_records()
+    
+    if len(all_records) > 0:
+        # Display records table
+        display_df = all_records[['record_date', 'patient_name', 'gender', 'glucose', 'bmi', 
+                                  'prediction', 'probability', 'risk_level']].copy()
+        display_df['prediction'] = display_df['prediction'].map({1: '🩺 Diabetes', 0: '✅ Healthy'})
+        display_df['probability'] = display_df['probability'].apply(lambda x: f"{x*100:.1f}%")
+        st.dataframe(display_df, use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("### 📊 Analytics Dashboard")
+        
+        # Summary stats
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Predictions", len(all_records))
+        with col2:
+            diabetes_count = len(all_records[all_records['prediction']==1])
+            st.metric("Diabetes Cases", diabetes_count)
+        with col3:
+            healthy_count = len(all_records[all_records['prediction']==0])
+            st.metric("Healthy Cases", healthy_count)
+        with col4:
+            avg_risk = all_records['probability'].mean() * 100
+            st.metric("Average Risk", f"{avg_risk:.1f}%")
+        
+        # Trend over time
+        st.subheader("📈 Risk Trend Over Time")
+        all_records['record_date'] = pd.to_datetime(all_records['record_date'])
+        all_records['date_only'] = all_records['record_date'].dt.date
+        daily_avg = all_records.groupby('date_only')['probability'].mean() * 100
+        
+        if len(daily_avg) > 1:
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(daily_avg.index, daily_avg.values, marker='o', linewidth=2, markersize=8, color='#667eea')
+            ax.fill_between(daily_avg.index, daily_avg.values, alpha=0.3, color='#667eea')
+            ax.set_xlabel('Date', fontsize=12)
+            ax.set_ylabel('Average Risk Probability (%)', fontsize=12)
+            ax.set_title('Diabetes Risk Trend Over Time', fontsize=14, fontweight='bold')
+            ax.grid(True, alpha=0.3)
+            plt.xticks(rotation=45)
+            st.pyplot(fig)
+            plt.close()
+        else:
+            st.info("Need more predictions to show trend")
+        
+        # Gender-based Analysis
+        st.subheader("👥 Gender-Based Analysis")
         col1, col2 = st.columns(2)
         
         with col1:
-            fig1 = px.histogram(df, x='Glucose', color='Outcome', nbins=30,
-                               color_discrete_map={0: '#10b981', 1: '#ef4444'},
-                               title="Glucose Distribution by Diabetes Status")
-            fig1.update_layout(template='plotly_white')
-            st.plotly_chart(fig1, use_container_width=True)
+            # Gender distribution of predictions
+            gender_counts = all_records.groupby('gender').size()
+            if len(gender_counts) > 0:
+                fig, ax = plt.subplots(figsize=(8, 6))
+                colors = ['#667eea', '#f472b6', '#94a3b8']
+                ax.pie(gender_counts.values, labels=gender_counts.index, autopct='%1.1f%%', colors=colors[:len(gender_counts)])
+                ax.set_title('Predictions by Gender', fontsize=12, fontweight='bold')
+                st.pyplot(fig)
+                plt.close()
         
         with col2:
-            fig2 = px.box(df, x='Outcome', y='BMI', color='Outcome',
-                         color_discrete_map={0: '#10b981', 1: '#ef4444'},
-                         title="BMI Distribution by Diabetes Status")
-            fig2.update_layout(template='plotly_white')
-            st.plotly_chart(fig2, use_container_width=True)
+            # Risk by gender
+            gender_risk = all_records.groupby('gender')['probability'].mean() * 100
+            if len(gender_risk) > 0:
+                fig, ax = plt.subplots(figsize=(8, 6))
+                bars = ax.bar(gender_risk.index, gender_risk.values, color=['#667eea', '#f472b6', '#94a3b8'])
+                ax.set_xlabel('Gender', fontsize=12)
+                ax.set_ylabel('Average Risk (%)', fontsize=12)
+                ax.set_title('Average Diabetes Risk by Gender', fontsize=12, fontweight='bold')
+                ax.set_ylim(0, 100)
+                for bar, value in zip(bars, gender_risk.values):
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1, 
+                            f'{value:.1f}%', ha='center', va='bottom')
+                st.pyplot(fig)
+                plt.close()
         
-        # 3D Visualization
-        st.subheader("3D Visualization: Glucose, BMI, and Age")
-        fig3 = px.scatter_3d(df, x='Glucose', y='BMI', z='Age', color='Outcome',
-                            color_discrete_map={0: '#10b981', 1: '#ef4444'},
-                            title="3D Distribution of Key Features")
-        fig3.update_layout(template='plotly_white')
-        st.plotly_chart(fig3, use_container_width=True)
+        # Risk Distribution
+        st.subheader("📊 Risk Distribution")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        all_records['risk_category'] = pd.cut(all_records['probability'] * 100, 
+                                               bins=[0, 30, 50, 70, 100],
+                                               labels=['Low Risk (<30%)', 'Moderate (30-50%)', 
+                                                      'High (50-70%)', 'Very High (>70%)'])
+        risk_counts = all_records['risk_category'].value_counts()
+        colors = ['#10b981', '#f59e0b', '#f97316', '#ef4444']
+        bars = ax.bar(risk_counts.index, risk_counts.values, color=colors[:len(risk_counts)])
+        ax.set_xlabel('Risk Category', fontsize=12)
+        ax.set_ylabel('Number of Predictions', fontsize=12)
+        ax.set_title('Distribution of Risk Levels', fontsize=14, fontweight='bold')
+        for bar, count in zip(bars, risk_counts.values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5, 
+                    str(count), ha='center', va='bottom')
+        st.pyplot(fig)
+        plt.close()
         
-        # Correlation Heatmap
-        st.subheader("Feature Correlation Matrix")
-        corr_matrix = df.corr()
-        fig4 = px.imshow(corr_matrix, text_auto=True, aspect="auto",
-                        color_continuous_scale='Viridis',
-                        title="Correlation Matrix")
-        st.plotly_chart(fig4, use_container_width=True)
+        # Patient-specific analytics
+        st.subheader("👤 Patient-Specific Analytics")
+        selected_patient_for_analytics = st.selectbox(
+            "Select patient for detailed analysis",
+            all_records['patient_name'].unique() if 'patient_name' in all_records.columns else []
+        )
         
-        # Feature Importance
-        st.subheader("Feature Importance")
-        feature_cols = ['Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness', 
-                        'Insulin', 'BMI', 'DiabetesPedigreeFunction', 'Age']
-        importance = pd.DataFrame({
-            'feature': feature_cols,
-            'importance': abs(model.coef_[0])
-        }).sort_values('importance', ascending=True)
-        
-        fig5 = px.bar(importance, x='importance', y='feature', orientation='h',
-                     color='importance',
-                     color_continuous_scale='Viridis',
-                     title="Feature Importance from Model")
-        fig5.update_layout(template='plotly_white')
-        st.plotly_chart(fig5, use_container_width=True)
+        if selected_patient_for_analytics:
+            patient_data = all_records[all_records['patient_name'] == selected_patient_for_analytics]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Patient risk trend
+                fig, ax = plt.subplots(figsize=(10, 6))
+                patient_data_sorted = patient_data.sort_values('record_date')
+                ax.plot(range(len(patient_data_sorted)), patient_data_sorted['probability'] * 100, 
+                       marker='o', linewidth=2, markersize=8, color='#667eea')
+                ax.set_xlabel('Visit Number', fontsize=12)
+                ax.set_ylabel('Risk Probability (%)', fontsize=12)
+                ax.set_title(f'Risk Trend for {selected_patient_for_analytics}', fontsize=14, fontweight='bold')
+                ax.set_ylim(0, 100)
+                ax.grid(True, alpha=0.3)
+                st.pyplot(fig)
+                plt.close()
+            
+            with col2:
+                # Key metrics for patient
+                latest = patient_data.iloc[0]
+                st.metric("Latest Result", latest['risk_level'])
+                st.metric("Latest Glucose", f"{latest['glucose']} mg/dL")
+                st.metric("Latest BMI", f"{latest['bmi']:.1f}")
+                st.metric("Latest Risk", f"{latest['probability']*100:.1f}%")
         
     else:
-        # Fallback to simple charts using matplotlib
-        st.warning("Plotly is not available. Showing basic visualizations.")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Glucose Distribution")
-            glucose_0 = df[df['Outcome']==0]['Glucose']
-            glucose_1 = df[df['Outcome']==1]['Glucose']
-            
-            fig, ax = plt.subplots(figsize=(8, 5))
-            ax.hist(glucose_0, bins=30, alpha=0.5, label='No Diabetes', color='green')
-            ax.hist(glucose_1, bins=30, alpha=0.5, label='Diabetes', color='red')
-            ax.set_xlabel('Glucose')
-            ax.set_ylabel('Frequency')
-            ax.set_title('Glucose Distribution')
-            ax.legend()
-            st.pyplot(fig)
-        
-        with col2:
-            st.subheader("BMI Distribution")
-            fig, ax = plt.subplots(figsize=(8, 5))
-            df.boxplot(column='BMI', by='Outcome', ax=ax)
-            ax.set_title('BMI by Diabetes Status')
-            ax.set_xlabel('Diabetes Status (0=No, 1=Yes)')
-            ax.set_ylabel('BMI')
-            st.pyplot(fig)
-        
-        # Simple correlation table
-        st.subheader("Feature Correlations with Outcome")
-        correlations = df.corr()['Outcome'].sort_values(ascending=False)
-        st.dataframe(correlations, use_container_width=True)
-
-# Tab 4: History
-with tab4:
-    st.markdown("### 📋 All Predictions History")
-    
-    try:
-        conn = sqlite3.connect('diabetes.db')
-        history_df = pd.read_sql('''
-            SELECT m.*, p.patient_name 
-            FROM medical_records m
-            LEFT JOIN patients p ON m.patient_id = p.patient_id
-            ORDER BY m.record_date DESC
-        ''', conn)
-        conn.close()
-        
-        if len(history_df) > 0:
-            display_df = history_df[['record_date', 'patient_name', 'glucose', 'bmi', 
-                                      'prediction', 'probability', 'risk_level']].copy()
-            display_df['prediction'] = display_df['prediction'].map({1: '⚠️ High Risk', 0: '✅ Low Risk'})
-            display_df['probability'] = display_df['probability'].apply(lambda x: f"{x*100:.1f}%")
-            st.dataframe(display_df, use_container_width=True)
-            
-            # Summary stats
-            st.markdown("### 📊 Summary Statistics")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Predictions", len(history_df))
-            with col2:
-                high_risk = len(history_df[history_df['prediction']==1])
-                st.metric("High Risk Cases", high_risk)
-            with col3:
-                avg_risk = history_df['probability'].mean() * 100
-                st.metric("Average Risk", f"{avg_risk:.1f}%")
-        else:
-            st.info("No predictions yet. Make a prediction to see history!")
-    except Exception as e:
-        st.info("No prediction history found")
+        st.info("No predictions yet. Make a prediction to see history and analytics!")
 
 st.markdown("---")
 st.caption("🏥 Diabetes Prediction System | Powered by Machine Learning | Please consult healthcare provider for medical advice")
