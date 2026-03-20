@@ -6,9 +6,7 @@
 
 <div align="center">
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/diabetes-prediction-system?style=social)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/diabetes-prediction-system?style=social)
-![GitHub watchers](https://img.shields.io/github/watchers/yourusername/diabetes-prediction-system?style=social)
+
 
 [![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Click_Here-FF6B6B?style=for-the-badge&logo=streamlit&logoColor=white)](https://diabetesprediction001.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.8+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
